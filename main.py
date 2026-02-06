@@ -15,7 +15,6 @@ from core.bot_manager import restore_bots
 
 # Load Config
 def load_config():
-    # Helper to find config from CleanBot root
     path = os.path.join(BASE_DIR, "config.json")
     with open(path, "r") as f:
         return json.load(f)
@@ -28,30 +27,56 @@ class ControllerBot(commands.Bot):
         intents = discord.Intents.default()
         intents.guilds = True
         intents.message_content = True
-        super().__init__(command_prefix="!", intents=intents)
+        intents.members = True
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self):
+        print("[Controller] Loading handlers...")
+        # Load button handlers
+        from controller.handlers.button_handler import button_handler
+        await button_handler.load_buttons(self)
+        self.button_handler = button_handler
+
+        # Load modal handlers
+        from controller.handlers.modal_handler import modal_handler
+        await modal_handler.load_modals(self)
+        self.modal_handler = modal_handler
+        
         print("[Controller] Loading modules...")
+        # Load Extensions
+        extensions = [
+            "controller.modules.admin.admin",
+            "controller.modules.user.bots",
+            "controller.modules.user.redeem",
+            "controller.tasks.leaderboard_updater"
+        ]
         
-        # Load extensions using dot notation relative to where this script is run
-        # if running python CleanBot/main.py, we might need adjustments.
-        # But since we added BASE_DIR to sys.path, we can import 'modules.xyz' directly if 'modules' is package.
-        # 'modules' directory needs __init__.py? No, typically not in Python 3.
+        for ext in extensions:
+            try:
+                await self.load_extension(ext)
+                print(f"[Controller] ✓ Loaded {ext}")
+            except Exception as e:
+                print(f"[Controller] ✗ Failed to load {ext}: {e}")
+                import traceback
+                traceback.print_exc()
         
-        await self.load_extension("modules.admin.keys")
-        await self.load_extension("modules.user.redeem")
-        await self.load_extension("modules.user.bots")
-        await self.load_extension("modules.admin.slots")
-        await self.load_extension("modules.user.email")
-        
+        print("[Controller] Syncing commands...")
         await self.tree.sync()
         print("[Controller] Commands synced.")
         
+        print("[BotManager] Restoring bots from database...")
         await restore_bots()
+    
+    async def on_interaction(self, interaction):
+        """Handle button/select/modal interactions"""
+        if interaction.type == discord.InteractionType.component:
+            await self.button_handler.handle_interaction(interaction)
+        elif interaction.type == discord.InteractionType.modal_submit:
+            await self.modal_handler.handle_interaction(interaction)
 
     async def on_ready(self):
         print(f"[Controller] Logged in as {self.user.name} ({self.user.id})")
-        print("[Controller] System Ready. Use /create-key, /redeem, /bots")
+        print(f"[Controller] Ready! Bot is online and listening for commands.")
 
 async def main():
     bot = ControllerBot()
@@ -62,4 +87,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Shutdown.")
+        print("\n[Controller] Shutdown requested.")
+    except Exception as e:
+        print(f"\n[Controller] Fatal error: {e}")
+        import traceback
+        traceback.print_exc()

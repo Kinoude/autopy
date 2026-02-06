@@ -1,6 +1,6 @@
 
 import discord
-from db.database import db
+from core.database import db
 import time
 
 async def show_bot_msg(user_id, bot_number, owner_id):

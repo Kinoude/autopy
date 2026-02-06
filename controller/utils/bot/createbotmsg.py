@@ -1,6 +1,6 @@
 
 import discord
-from db.database import db
+from core.database import db
 
 # Ported from createbotmsg.js
 async def create_bot_msg(client, user_id):

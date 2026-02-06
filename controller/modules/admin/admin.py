@@ -2,7 +2,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from db.database import db
+from core.database import db
 import time
 from controller.utils.panels.feature_panel import feature_panel
 from controller.utils.panels.guide_panel import guide_panel
@@ -13,9 +13,9 @@ class Admin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    admin_group = app_commands.Group(name="admin", description="Admin only commands")
+    admin = app_commands.Group(name="admin", description="Admin only commands")
 
-    @admin_group.command(name="config", description="Configure bot settings")
+    @admin.command(name="config", description="Configure bot settings")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.choices(option=[
         app_commands.Choice(name="Restart Bot", value="restart_bot"),
@@ -37,8 +37,6 @@ class Admin(commands.Cog):
         
         if op == "restart_bot":
             await interaction.response.send_message("Restarting bot...", ephemeral=True)
-            # In a real scenario, this might trigger a process restart
-            # For now, maybe just sync?
             
         elif op == "bot_status":
              await self.handle_activity(interaction)
@@ -53,7 +51,7 @@ class Admin(commands.Cog):
         elif op == "set_proxy":
              await interaction.response.send_message("Proxy configuration not yet implemented.", ephemeral=True)
 
-    @admin_group.command(name="access", description="Manage licenses and users")
+    @admin.command(name="access", description="Manage licenses and users")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.choices(option=[
         app_commands.Choice(name="Create License Key", value="create_key"),
@@ -105,7 +103,6 @@ class Admin(commands.Cog):
             type = discord.ui.TextInput(label="Activity Type (playing/watching/listening)", placeholder="playing")
             
             async def on_submit(self, i: discord.Interaction):
-                # Update DB and presence (omitted for brevity)
                 await i.response.send_message(f"Activity set to {self.type.value} {self.name.value}", ephemeral=True)
                 
         await interaction.response.send_modal(ActivityModal())
@@ -131,7 +128,6 @@ class Admin(commands.Cog):
                 await interaction.response.send_message("✅ Purchase panel sent.", ephemeral=True)
                 
             elif embed_type == "leaderboard":
-                # Check legacy logic: delete old message if exists
                 old_id_setting = await get_message_id()
                 if old_id_setting:
                     try:
@@ -148,13 +144,11 @@ class Admin(commands.Cog):
                 await interaction.response.send_message("✅ Leaderboard refreshed.", ephemeral=True)
                 
             elif embed_type == "ticket":
-                 # Simple Ticket Panel Logic
                  embed = discord.Embed(
                     title='Autosecure Support',
                     description="Select the type of support ticket you need from the menu below.\n- Be detailed\n- Be patient",
                     color=0xC8A2C8
                  )
-                 # Ticket Menu stub
                  view = discord.ui.View()
                  view.add_item(discord.ui.Button(label="Open Ticket", style=discord.ButtonStyle.primary, custom_id="createticket"))
                  await interaction.channel.send(embed=embed, view=view)
@@ -165,19 +159,32 @@ class Admin(commands.Cog):
                  
         except Exception as e:
             print(f"Error sending panel: {e}")
+            import traceback
+            traceback.print_exc()
             await interaction.response.send_message(f"❌ Failed to send embed: {e}", ephemeral=True)
 
     # --- Access Handlers ---
     async def create_key(self, interaction, amount, duration, user_id):
-        # ... (simplified)
-        await interaction.response.send_message(f"Generated {amount} keys for {duration} days.", ephemeral=True)
+        import uuid
+        keys = []
+        for _ in range(amount):
+            key = uuid.uuid4().hex[:12].upper()
+            await db.query("INSERT INTO licenses (license, days) VALUES (?, ?)", [key, duration])
+            keys.append(key)
+            
+        msg = f"Generated {amount} keys for {duration} days:\n" + "\n".join(f"`{k}`" for k in keys)
+        await interaction.response.send_message(msg, ephemeral=True)
         
     async def delete_key(self, interaction, key):
         await db.query("DELETE FROM licenses WHERE license = ?", [key])
         await interaction.response.send_message(f"Deleted key {key}.", ephemeral=True)
         
     async def view_keys(self, interaction):
-        await interaction.response.send_message("List of keys...", ephemeral=True)
+        keys = await db.query("SELECT * FROM licenses")
+        if not keys:
+            return await interaction.response.send_message("No keys found.", ephemeral=True)
+        msg = "\n".join([f"`{k['license']}` - {k['days']} days" for k in keys[:20]])
+        await interaction.response.send_message(f"**Keys ({len(keys)} total):**\n{msg}", ephemeral=True)
         
     async def blacklist_user(self, interaction, user_id, reason):
         await db.query("INSERT INTO blacklist(user_id, reason, time) VALUES(?, ?, ?)", [user_id, reason or "No reason", int(time.time())])
@@ -189,14 +196,21 @@ class Admin(commands.Cog):
         
     async def view_blacklist(self, interaction):
         rows = await db.query("SELECT * FROM blacklist")
-        await interaction.response.send_message(f"Blacklisted users: {len(rows)}", ephemeral=True)
+        if not rows:
+            return await interaction.response.send_message("No blacklisted users.", ephemeral=True)
+        msg = "\n".join([f"<@{r['user_id']}> - {r['reason']}" for r in rows[:20]])
+        await interaction.response.send_message(f"**Blacklisted users ({len(rows)} total):**\n{msg}", ephemeral=True)
 
     async def remove_user(self, interaction, user_id):
         await db.query("DELETE FROM usedLicenses WHERE user_id = ?", [user_id])
         await interaction.response.send_message(f"User {user_id} removed.", ephemeral=True)
         
     async def view_users(self, interaction):
-         await interaction.response.send_message("List of active users...", ephemeral=True)
+         users = await db.query("SELECT * FROM usedLicenses")
+         if not users:
+             return await interaction.response.send_message("No active users.", ephemeral=True)
+         msg = "\n".join([f"<@{u['user_id']}>" for u in users[:20]])
+         await interaction.response.send_message(f"**Active users ({len(users)} total):**\n{msg}", ephemeral=True)
          
     async def create_slot_key(self, interaction, amount):
          import uuid

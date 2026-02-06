@@ -1,6 +1,6 @@
 
 import discord
-from db.database import db
+from core.database import db
 
 async def check_hidden(user_id):
     entry = await db.query("SELECT showleaderboard FROM settings WHERE user_id = ?", [user_id])

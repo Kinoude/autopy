@@ -2,7 +2,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from db.database import db
+from core.database import db
 
 class UserBots(commands.Cog):
     def __init__(self, bot):

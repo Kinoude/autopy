@@ -1,6 +1,6 @@
 
 import discord
-from db.database import db
+from core.database import db
 from core.bot_manager import start_bot
 import time
 

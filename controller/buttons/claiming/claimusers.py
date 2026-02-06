@@ -1,6 +1,6 @@
 
 import discord
-from db.database import db
+from core.database import db
 
 custom_id = "claimusers"
 
